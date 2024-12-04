@@ -125,8 +125,11 @@ def process_texts(data, texts):
         results.append({
             "ID": row["ID"],
             "filename": row["filename"],
+            "real_gender": row["sexe"],
             "gender_extracted": gender,
+            "real_accident_date": row["date_accident"],
             "accident_date_extracted": accident_date,
+            "real_consolidation_date": row["date_consolidation"],
             "consolidation_date_extracted": consolidation_date
         })
     return pd.DataFrame(results)
