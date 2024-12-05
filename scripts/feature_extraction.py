@@ -4,32 +4,34 @@ import spacy
 from textblob import TextBlob
 from format_funtions import reformat_dates
 
-# Charger le modèle SpaCy pour le français
+# Load the French language model
 nlp = spacy.load("fr_core_news_sm")
 
-# Liste de prénoms courants masculins et féminins
+# List of common French first names
 male_names = ["Jean", "Pierre", "Paul", "Jacques", "Michel", "Louis", "André", "Henri", "Robert", "Georges", "Philippe"]
 female_names = ["Marie", "Jeanne", "Marguerite", "Paulette", "Simone", "Lucie", "Yvonne", "Madeleine", "Hélène", "Marcelle", "Sophie"]
 
 def analyze_sentiment(text):
-    """Analyse de sentiment d'un texte avec TextBlob."""
+    """Analyze the sentiment of a text using TextBlob."""
     blob = TextBlob(text)
     return blob.sentiment.polarity
 
 
 def count_gender_markers(text):
-    """Compte les marqueurs masculins et féminins dans un texte."""
+    """Count different markers of gender."""
     text_lower = text.lower()
     markers = {
         "il": text_lower.count(" il "),
         "elle": text_lower.count(" elle "),
         "monsieur": text_lower.count("monsieur"),
-        "madame": text_lower.count("madame"),
         "mr": text_lower.count("mr"),
-        "mme": text_lower.count("mme")
+        "m." : text_lower.count("m."),
+        "madame": text_lower.count("madame"),
+        "mme": text_lower.count("mme"),
+        "mme.": text_lower.count("mme.")
     }
     
-    # Déterminer le genre dominant pour chaque paire
+    # Find the dominant gender based on the counts
     gender_dominance = {
         "pronoun_gender": "male" if markers["il"] > markers["elle"] else "female" if markers["elle"] > markers["il"] else "neutral",
         "title_gender": "male" if markers["monsieur"] + markers["mr"] > markers["madame"] + markers["mme"] else "female" if markers["madame"] + markers["mme"] > markers["monsieur"] + markers["mr"] else "neutral"
@@ -39,7 +41,14 @@ def count_gender_markers(text):
 
 def create_feature_dataframe(data, text_dict):
     """
-    Crée un DataFrame contenant des caractéristiques (features) extraites et les variables cibles.
+    Create a DataFrame with extracted features from the text data.
+
+    Parameters:
+    - data (pd.DataFrame): DataFrame with metadata.
+    - text_dict (dict): Dictionary with text data, where the keys are the filenames.
+
+    Returns:
+    - pd.DataFrame: DataFrame with extracted features.
     """
     features = {
         "il_count": [],
@@ -64,7 +73,7 @@ def create_feature_dataframe(data, text_dict):
     for filename in data["filename"]:
         text = text_dict.get(filename, "")
         
-        # Comptage des marqueurs de genre
+        # Gender markers and dominance
         markers, dominance = count_gender_markers(text)
         features["il_count"].append(markers["il"])
         features["elle_count"].append(markers["elle"])
@@ -73,12 +82,12 @@ def create_feature_dataframe(data, text_dict):
         features["pronoun_gender"].append(dominance["pronoun_gender"])
         features["title_gender"].append(dominance["title_gender"])
         
-        # Noms
+        # Names
         tokens = [token.text for token in nlp(text)]
         features["contains_male_name"].append(1 if any(name in tokens for name in male_names) else 0)
         features["contains_female_name"].append(1 if any(name in tokens for name in female_names) else 0)
         
-        # Verbes
+        # Verbs
         verbs = [token.lemma_ for token in nlp(text) if token.pos_ == "VERB"]
         features["contains_verb_tomber"].append(1 if "tomber" in verbs else 0)
         features["contains_verb_consolider"].append(1 if "consolider" in verbs else 0)
@@ -88,14 +97,14 @@ def create_feature_dataframe(data, text_dict):
         features["accident_date"].append(accident_date)
         features["consolidation_date"].append(consolidation_date)
         
-        # Mots-clés
+        # Keywords
         keywords = ["accident", "consolidation", "blessure", "choc", "fracture"]
         features["keyword_count"].append(sum(text.lower().count(word) for word in keywords))
         
-        # Sentiment
+        # Sentiment analysis
         features["sentiment_polarity"].append(analyze_sentiment(text))
         
-        # Métadonnées textuelles
+        # Metadata
         features["text_length"].append(len(text))
         features["num_words"].append(len(text.split()))
         features["num_sentences"].append(len(re.split(r"[.!?]", text)))
@@ -108,37 +117,37 @@ def create_feature_dataframe(data, text_dict):
 
 def extract_dates_with_context(text, context_window=10):
     """
-    Extraction de dates avec des indices contextuels dans une fenêtre de texte.
-    
+    Extract accident and consolidation dates from text with context.
+
     Parameters:
-    - text (str): Texte à analyser.
-    - context_window (int): Nombre de mots autour de la date à extraire pour le contexte.
-    
+    - text (str): Text data.
+    - context_window (int): Number of words to include before and after the date.
+
     Returns:
-    -  The most relevant date extracted for accident and consolidation.
+    - tuple: Extracted accident date and consolidation date.
     """
-    # Modèle de date
+    # Modified date patterns to include more date formats
     date_patterns = r"\b(?:\d{1,2}/\d{1,2}/\d{2,4}|\d{1,2} [a-zéû]+ \d{4}|\d{4}-\d{2}-\d{2})\b"
     matches = re.finditer(date_patterns, text)
     
     accident_date = "n.c."
     consolidation_date = "n.c."
 
-    # Découper le texte en mots
+    # Split the text into words for context extraction
     words = text.split()
     
     for match in matches:
         date = match.group()
         start_idx, end_idx = match.start(), match.end()
         
-        # Trouver les indices des mots entourant la date
+        # Define the start and end word indices for the context window
         start_word_idx = max(0, len(text[:start_idx].split()) - context_window)
         end_word_idx = min(len(words), len(text[:end_idx].split()) + context_window)
         
-        # Extraire le contexte autour de la date
+        # Extract the context window
         context = " ".join(words[start_word_idx:end_word_idx])
         
-        # key word for date extraction one line 
+        # Check the context for relevant keywords
         if "accident" in context:
             accident_date = reformat_dates(date)
         elif "consolidation" in context:

@@ -3,7 +3,6 @@ import pandas as pd
 import re
 from sklearn.model_selection import train_test_split
 
-# 2. Merge and preprocess data
 def merge_and_preprocess(x_ids, predilex):
     # Merge x_ids and predilex on ID
     data = pd.merge(x_ids, predilex, left_on="ID", right_index=True)
