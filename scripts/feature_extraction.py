@@ -11,6 +11,9 @@ nlp = spacy.load("fr_core_news_sm")
 male_names = ["Jean", "Pierre", "Paul", "Jacques", "Michel", "Louis", "André", "Henri", "Robert", "Georges", "Philippe"]
 female_names = ["Marie", "Jeanne", "Marguerite", "Paulette", "Simone", "Lucie", "Yvonne", "Madeleine", "Hélène", "Marcelle", "Sophie"]
 
+key_words_accident = ["accident", "blessure", "choc", "fracture"]
+key_words_consolidation = ["consolidation", "guérison", "rétablissement", "convalescence"]
+
 def analyze_sentiment(text):
     """Analyze the sentiment of a text using TextBlob."""
     blob = TextBlob(text)
@@ -57,13 +60,12 @@ def create_feature_dataframe(data, text_dict):
         "madame_count": [],
         "pronoun_gender": [],
         "title_gender": [],
-        "contains_male_name": [],
-        "contains_female_name": [],
+        "male_name_count": [],
+        "female_name_count": [],
         "contains_verb_tomber": [],
         "contains_verb_consolider": [],
-        "accident_date": [],
-        "consolidation_date": [],
-        "keyword_count": [],
+        "date_accident_pred": [],
+        "date_consolidation_pred": [],
         "sentiment_polarity": [],
         "text_length": [],
         "num_words": [],
@@ -82,11 +84,11 @@ def create_feature_dataframe(data, text_dict):
         features["pronoun_gender"].append(dominance["pronoun_gender"])
         features["title_gender"].append(dominance["title_gender"])
         
-        # Names
+        # Names, count how many male name and how many female name
         tokens = [token.text for token in nlp(text)]
-        features["contains_male_name"].append(1 if any(name in tokens for name in male_names) else 0)
-        features["contains_female_name"].append(1 if any(name in tokens for name in female_names) else 0)
-        
+        features["male_name_count"].append(sum([1 for name in tokens if name in male_names]))
+        features["female_name_count"].append(sum([1 for name in tokens if name in female_names]))
+
         # Verbs
         verbs = [token.lemma_ for token in nlp(text) if token.pos_ == "VERB"]
         features["contains_verb_tomber"].append(1 if "tomber" in verbs else 0)
@@ -94,12 +96,8 @@ def create_feature_dataframe(data, text_dict):
         
         # Dates
         accident_date, consolidation_date = extract_dates_with_context(text, context_window=10)
-        features["accident_date"].append(accident_date)
-        features["consolidation_date"].append(consolidation_date)
-        
-        # Keywords
-        keywords = ["accident", "consolidation", "blessure", "choc", "fracture"]
-        features["keyword_count"].append(sum(text.lower().count(word) for word in keywords))
+        features["date_accident_pred"].append(accident_date)
+        features["date_consolidation_pred"].append(consolidation_date)
         
         # Sentiment analysis
         features["sentiment_polarity"].append(analyze_sentiment(text))
@@ -117,41 +115,38 @@ def create_feature_dataframe(data, text_dict):
 
 def extract_dates_with_context(text, context_window=10):
     """
-    Extract accident and consolidation dates from text with context.
+    Extract accident and consolidation dates from text with dynamic context.
 
     Parameters:
     - text (str): Text data.
-    - context_window (int): Number of words to include before and after the date.
+    - context_window (int): Initial number of words for context extraction.
 
     Returns:
     - tuple: Extracted accident date and consolidation date.
     """
-    # Modified date patterns to include more date formats
     date_patterns = r"\b(?:\d{1,2}/\d{1,2}/\d{2,4}|\d{1,2} [a-zéû]+ \d{4}|\d{4}-\d{2}-\d{2})\b"
     matches = re.finditer(date_patterns, text)
     
-    accident_date = "n.c."
-    consolidation_date = "n.c."
-
-    # Split the text into words for context extraction
+    accident_date, consolidation_date = "n.c.", "n.c."
     words = text.split()
     
+    # Liste étendue de mots-clés
+    accident_keywords = ["accident", "blessure", "choc", "victime", "sinistre", "collision", "incident", "fracture"]
+    consolidation_keywords = ["consolidation", "guérison", "stabilisation", "rémission", "état final"]
+
     for match in matches:
         date = match.group()
         start_idx, end_idx = match.start(), match.end()
         
-        # Define the start and end word indices for the context window
         start_word_idx = max(0, len(text[:start_idx].split()) - context_window)
         end_word_idx = min(len(words), len(text[:end_idx].split()) + context_window)
-        
-        # Extract the context window
         context = " ".join(words[start_word_idx:end_word_idx])
-        
-        # Check the context for relevant keywords
-        if "accident" in context:
+
+        # Classifier selon le contexte
+        if any(keyword in context for keyword in accident_keywords):
             accident_date = reformat_dates(date)
-        elif "consolidation" in context:
+        elif any(keyword in context for keyword in consolidation_keywords):
             consolidation_date = reformat_dates(date)
-        
     
     return accident_date, consolidation_date
+

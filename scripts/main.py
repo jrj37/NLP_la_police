@@ -2,9 +2,9 @@ import os
 import pandas as pd
 from data_preprocessing import load_csv_files, merge_and_preprocess, load_text_files
 from feature_extraction import create_feature_dataframe
-from evaluation import save_results
+from evaluation import save_results, calculate_metrics, print_metrics
 
-LIMIT_FILES = 3
+LIMIT_FILES = 200
 
 # Define paths
 text_folder = "../Data/train_folder_predilex/txt_files/train_folder/txt_files"
@@ -24,11 +24,16 @@ def main():
     print("Merging and preprocessing data...")
     data = merge_and_preprocess(x_ids, predilex)
     
-    # # Step 4: Extract features
+    # Step 4: Extract features
     print("Extracting features...")
     df = create_feature_dataframe(data,texts)
+
+    # Step 5: Evaluate model
+    print("Evaluating model...")
+    metrics = calculate_metrics(df)
+    print_metrics(metrics)
     
-    # # Step 5: Save feature data for modeling
+    # Step 5: Save feature data for modeling
     print("Saving feature data...")
     save_results(df, "../results/df.csv")
 
