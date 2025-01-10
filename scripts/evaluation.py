@@ -2,33 +2,46 @@ import pandas as pd
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 def calculate_metrics(data):
-    precision_gender = precision_score(data["real_gender"], data["gender_extracted"], average="weighted", zero_division=1)
-    recall_gender = recall_score(data["real_gender"], data["gender_extracted"], average="weighted", zero_division=1)
-    f1_gender = f1_score(data["real_gender"], data["gender_extracted"], average="weighted", zero_division=1)
-    
-    precision_accident_date = precision_score(data["real_accident_date"].notnull(), data["accident_date_extracted"].notnull(), average="binary", pos_label=True, zero_division=1)
-    recall_accident_date = recall_score(data["real_accident_date"].notnull(), data["accident_date_extracted"].notnull(), average="binary", pos_label=True, zero_division=1)
-    f1_accident_date = f1_score(data["real_accident_date"].notnull(), data["accident_date_extracted"].notnull(), average="binary", pos_label=True, zero_division=1)
-    
-    precision_consolidation_date = precision_score(data["real_consolidation_date"].notnull(), data["consolidation_date_extracted"].notnull(), average="binary", pos_label=True, zero_division=1)
-    recall_consolidation_date = recall_score(data["real_consolidation_date"].notnull(), data["consolidation_date_extracted"].notnull(), average="binary", pos_label=True, zero_division=1)
-    f1_consolidation_date = f1_score(data["real_consolidation_date"].notnull(), data["consolidation_date_extracted"].notnull(), average="binary", pos_label=True, zero_division=1)
-    
+    # Harmoniser les valeurs entre sexe et pronoun_gender
+    sexe_harmonized = data["sexe"].replace({"homme": "male", "femme": "female"})
+    pronoun_gender_harmonized = data["pronoun_gender"]
+
+    # Comparaison directe harmonisée
+    correct_gender = sexe_harmonized == pronoun_gender_harmonized
+    precision_gender = precision_score(data["sexe"].notnull(), correct_gender, average="binary", pos_label=True, zero_division=1)
+    recall_gender = recall_score(data["sexe"].notnull(), correct_gender, average="binary", pos_label=True, zero_division=1)
+    f1_gender = f1_score(data["sexe"].notnull(), correct_gender, average="binary", pos_label=True, zero_division=1)
+
+    # Accident date evaluation (comparer les valeurs exactes)
+    correct_date_accident = data["date_accident"] == data["date_accident_pred"]
+    precision_date_accident = precision_score(data["date_accident"].notnull(), correct_date_accident, average="binary", pos_label=True, zero_division=1)
+    recall_date_accident = recall_score(data["date_accident"].notnull(), correct_date_accident, average="binary", pos_label=True, zero_division=1)
+    f1_date_accident = f1_score(data["date_accident"].notnull(), correct_date_accident, average="binary", pos_label=True, zero_division=1)
+
+    # Consolidation date evaluation (comparer les valeurs exactes)
+    correct_date_consolidation = data["date_consolidation"] == data["date_consolidation_pred"]
+    precision_date_consolidation = precision_score(data["date_consolidation"].notnull(), correct_date_consolidation, average="binary", pos_label=True, zero_division=1)
+    recall_date_consolidation = recall_score(data["date_consolidation"].notnull(), correct_date_consolidation, average="binary", pos_label=True, zero_division=1)
+    f1_date_consolidation = f1_score(data["date_consolidation"].notnull(), correct_date_consolidation, average="binary", pos_label=True, zero_division=1)
+
     metrics = {
         "gender_precision": precision_gender,
         "gender_recall": recall_gender,
         "gender_f1_score": f1_gender,
-        "accident_date_precision": precision_accident_date,
-        "accident_date_recall": recall_accident_date,
-        "accident_date_f1_score": f1_accident_date,
-        "consolidation_date_precision": precision_consolidation_date,
-        "consolidation_date_recall": recall_consolidation_date,
-        "consolidation_date_f1_score": f1_consolidation_date,
+        "date_accident_precision": precision_date_accident,
+        "date_accident_recall": recall_date_accident,
+        "date_accident_f1_score": f1_date_accident,
+        "date_consolidation_precision": precision_date_consolidation,
+        "date_consolidation_recall": recall_date_consolidation,
+        "date_consolidation_f1_score": f1_date_consolidation,
     }
-    
     return metrics
 
-# 2. Fonction pour sauvegarder les résultats dans un fichier CSV
+def print_metrics(metrics):
+    # Afficher les métriques
+    for metric, value in metrics.items():
+        print(f"{metric}: {value}")
+
 def save_results(data, output_file):
     # Sauvegarder les données traitées dans un fichier CSV
     data.to_csv(output_file, index=False)
