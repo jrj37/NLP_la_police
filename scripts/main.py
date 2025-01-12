@@ -4,7 +4,7 @@ from data_preprocessing import load_csv_files, merge_and_preprocess, load_text_f
 from feature_extraction import create_feature_dataframe
 from evaluation import save_results, calculate_metrics, print_metrics
 
-LIMIT_FILES = 200
+LIMIT_FILES = 500
 
 # Define paths
 text_folder = "../Data/train_folder_predilex/txt_files/train_folder/txt_files"
@@ -28,12 +28,16 @@ def main():
     print("Extracting features...")
     df = create_feature_dataframe(data,texts)
 
-    # Step 5: Evaluate model
+    # Step 5: predict gender column
+    # print("Predict gender...")
+    # predict(df)
+
+    # Step 6: Evaluate model
     print("Evaluating model...")
     metrics = calculate_metrics(df)
     print_metrics(metrics)
     
-    # Step 5: Save feature data for modeling
+    # Step 7: Save feature data for modeling
     print("Saving feature data...")
     save_results(df, "../results/df.csv")
 

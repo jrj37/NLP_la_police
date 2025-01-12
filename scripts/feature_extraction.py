@@ -3,6 +3,8 @@ import re
 import spacy
 from textblob import TextBlob
 from format_funtions import reformat_dates
+from transformers import pipeline
+from sklearn.ensemble import GradientBoostingClassifier
 
 # Load the French language model
 nlp = spacy.load("fr_core_news_sm")
@@ -14,11 +16,33 @@ female_names = ["Marie", "Jeanne", "Marguerite", "Paulette", "Simone", "Lucie", 
 key_words_accident = ["accident", "blessure", "choc", "fracture"]
 key_words_consolidation = ["consolidation", "guérison", "rétablissement", "convalescence"]
 
+male_verbs = ["blessé", "accidenté", "décédé", "tombé"]
+female_verbs = ["blessée", "accidentée", "décédée", "tombée"]
+
+male_keywords = [
+    "père", "garçon", "travailleur", "mari", "monsieur", "époux", 
+    "ouvrier", "chauffeur", "artisan", "agriculteur", "cadre", 
+    "ingénieur", "apprenti", "jeune homme", "vétéran", "victime masculine"
+]
+female_keywords = [
+    "mère", "fille", "travailleuse", "épouse", "madame", "mademoiselle", 
+    "infirmière", "assistante", "employée", "ménagère", "veuve", 
+    "jeune femme", "enceinte", "victime féminine"
+]
+
+# Mots-clés
+accident_keywords = ["accident", "blessure", "choc", "victime", "sinistre", "collision", "incident", "fracture"]
+consolidation_keywords = ["consolidation", "guérison", "stabilisation", "rémission", "état final"]
+
+
 def analyze_sentiment(text):
     """Analyze the sentiment of a text using TextBlob."""
     blob = TextBlob(text)
     return blob.sentiment.polarity
 
+def count_tokens(tokens, keywords):
+    """Count the number of tokens that match a list of keywords."""
+    return sum([1 for token in tokens if token in keywords])
 
 def count_gender_markers(text):
     """Count different markers of gender."""
@@ -28,10 +52,10 @@ def count_gender_markers(text):
         "elle": text_lower.count(" elle "),
         "monsieur": text_lower.count("monsieur"),
         "mr": text_lower.count("mr"),
-        "m." : text_lower.count("m."),
         "madame": text_lower.count("madame"),
         "mme": text_lower.count("mme"),
-        "mme.": text_lower.count("mme.")
+        "mademoiselle": text_lower.count("mademoiselle"),
+        "mlle": text_lower.count("mlle"),
     }
     
     # Find the dominant gender based on the counts
@@ -62,14 +86,16 @@ def create_feature_dataframe(data, text_dict):
         "title_gender": [],
         "male_name_count": [],
         "female_name_count": [],
-        "contains_verb_tomber": [],
-        "contains_verb_consolider": [],
+        "male_keywords_count": [],
+        "female_keywords_count": [],
+        "male_verbs_count": [],
+        "female_verbs_count": [],
         "date_accident_pred": [],
         "date_consolidation_pred": [],
         "sentiment_polarity": [],
         "text_length": [],
         "num_words": [],
-        "num_sentences": [],
+        "num_sentences": []
     }
     
     for filename in data["filename"]:
@@ -84,18 +110,18 @@ def create_feature_dataframe(data, text_dict):
         features["pronoun_gender"].append(dominance["pronoun_gender"])
         features["title_gender"].append(dominance["title_gender"])
         
-        # Names, count how many male name and how many female name
+        # Count gendered keywords
         tokens = [token.text for token in nlp(text)]
-        features["male_name_count"].append(sum([1 for name in tokens if name in male_names]))
-        features["female_name_count"].append(sum([1 for name in tokens if name in female_names]))
-
-        # Verbs
-        verbs = [token.lemma_ for token in nlp(text) if token.pos_ == "VERB"]
-        features["contains_verb_tomber"].append(1 if "tomber" in verbs else 0)
-        features["contains_verb_consolider"].append(1 if "consolider" in verbs else 0)
+        # use token for each word in the text
+        features["male_name_count"].append(count_tokens(tokens, male_names))
+        features["female_name_count"].append(count_tokens(tokens, female_names))
+        features["male_keywords_count"].append(count_tokens(tokens, male_keywords))
+        features["female_keywords_count"].append(count_tokens(tokens, female_keywords))
+        features["male_verbs_count"].append(count_tokens(tokens, male_verbs))
+        features["female_verbs_count"].append(count_tokens(tokens, female_verbs))
         
         # Dates
-        accident_date, consolidation_date = extract_dates_with_context(text, context_window=10)
+        accident_date, consolidation_date = extract_dates_advanced(text, context_window=10)
         features["date_accident_pred"].append(accident_date)
         features["date_consolidation_pred"].append(consolidation_date)
         
@@ -129,10 +155,7 @@ def extract_dates_with_context(text, context_window=10):
     
     accident_date, consolidation_date = "n.c.", "n.c."
     words = text.split()
-    
-    # Liste étendue de mots-clés
-    accident_keywords = ["accident", "blessure", "choc", "victime", "sinistre", "collision", "incident", "fracture"]
-    consolidation_keywords = ["consolidation", "guérison", "stabilisation", "rémission", "état final"]
+
 
     for match in matches:
         date = match.group()
@@ -150,3 +173,84 @@ def extract_dates_with_context(text, context_window=10):
     
     return accident_date, consolidation_date
 
+
+def extract_dates_with_dependencies(text):
+    accident_date, consolidation_date = "n.c.", "n.c."
+    doc = nlp(text)
+    
+    for token in doc:
+        # Vérifier si le mot est un mot-clé lié à un accident
+        if token.text.lower() in accident_keywords:
+            for child in token.children:
+                if child.ent_type_ == "DATE":
+                    accident_date = child.text
+        # Vérifier si le mot est un mot-clé lié à la consolidation
+        elif token.text.lower() in consolidation_keywords:
+            for child in token.children:
+                if child.ent_type_ == "DATE":
+                    consolidation_date = child.text
+    
+    return accident_date, consolidation_date
+
+
+def extract_dates_with_contextual_expansion(text, context_window=5):
+    words = text.split()
+    date_patterns = r"\b(?:\d{1,2}/\d{1,2}/\d{2,4}|\d{1,2} [a-zéû]+ \d{4}|\d{4}-\d{2}-\d{2})\b"
+    matches = re.finditer(date_patterns, text)
+    
+    accident_date, consolidation_date = "n.c.", "n.c."
+
+    for match in matches:
+        date = match.group()
+        for expansion in [context_window, context_window * 2]:
+            start_idx = max(0, len(text[:match.start()].split()) - expansion)
+            end_idx = min(len(words), len(text[:match.end()].split()) + expansion)
+            context = " ".join(words[start_idx:end_idx])
+
+            if any(kw in context for kw in accident_keywords):
+                accident_date = date
+                break
+            elif any(kw in context for kw in consolidation_keywords):
+                consolidation_date = date
+                break
+
+    return accident_date, consolidation_date
+
+
+def rank_dates_by_relevance(text):
+    words = text.split()
+    date_patterns = r"\b(?:\d{1,2}/\d{1,2}/\d{2,4}|\d{1,2} [a-zéû]+ \d{4}|\d{4}-\d{2}-\d{2})\b"
+    matches = re.finditer(date_patterns, text)
+    
+    scored_dates = []
+
+    for match in matches:
+        date = match.group()
+        start_idx = max(0, len(text[:match.start()].split()) - 10)
+        end_idx = min(len(words), len(text[:match.end()].split()) + 10)
+        context = " ".join(words[start_idx:end_idx])
+        
+        # Calculer un score basé sur la fréquence des mots-clés
+        score_accident = sum(context.lower().count(kw) for kw in accident_keywords)
+        score_consolidation = sum(context.lower().count(kw) for kw in consolidation_keywords)
+        
+        scored_dates.append({
+            "date": date,
+            "score_accident": score_accident,
+            "score_consolidation": score_consolidation,
+        })
+
+    # Attribuer les dates avec les scores les plus élevés
+    accident_date = max(scored_dates, key=lambda x: x["score_accident"])["date"] if scored_dates else "n.c."
+    consolidation_date = max(scored_dates, key=lambda x: x["score_consolidation"])["date"] if scored_dates else "n.c."
+    
+    return accident_date, consolidation_date
+
+
+
+def extract_dates_advanced(text, context_window=10):
+    # accident_date, consolidation_date = extract_dates_with_contextual_expansion(text, context_window)
+    accident_date_ranked, consolidation_date_ranked = rank_dates_by_relevance(text)
+    
+    
+    return reformat_dates(accident_date_ranked), reformat_dates(consolidation_date_ranked)
